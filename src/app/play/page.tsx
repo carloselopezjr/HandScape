@@ -1,11 +1,12 @@
 "use client";
 
-import ThreeJS from '../components/threejs/3dtesting';
+import { SimpleHandTrackingTest } from '../components/threejs/SimpleHandTrackingTest';
+
 export default function Play() {
     return (
         <div className="">
             <div className="flex justify-center">
-                <ThreeJS />
+                <SimpleHandTrackingTest />
             </div>
         </div>
     )

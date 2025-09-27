@@ -219,7 +219,14 @@ function StaticBaseplate() {
     )
 }
 
-export default function CubeScene() {
+export default function CubeScene({ gestureCommands }: { 
+    gestureCommands?: {
+        createCube?: boolean;
+        selectCube?: boolean;
+        resizeValue?: number;
+        togglePhysics?: boolean;
+    } 
+} = {}) {
     // State to manage cubes, storing position & size
     const [cubes, setCubes] = useState<Array<{ position: [number, number, number]; size: [number, number, number] }>>([]);
     const [selectedCube, setSelectedCube] = useState<number | null>(null);
@@ -286,6 +293,38 @@ export default function CubeScene() {
         };
         setCubes(newCubes);
     };
+
+    // Handle gesture commands
+    useEffect(() => {
+        if (gestureCommands?.createCube) {
+            createCube();
+        }
+    }, [gestureCommands?.createCube]);
+
+    useEffect(() => {
+        if (gestureCommands?.selectCube && cubes.length > 0) {
+            // Select the most recent cube or cycle through cubes
+            const nextCube = selectedCube === null ? 0 : (selectedCube + 1) % cubes.length;
+            handleCubeSelection(nextCube);
+        }
+    }, [gestureCommands?.selectCube]);
+
+    useEffect(() => {
+        if (gestureCommands?.resizeValue && selectedCube !== null) {
+            // Map hand distance to cube size (scale and clamp)
+            const size = Math.max(1, Math.min(20, gestureCommands.resizeValue));
+            setWidth(size);
+            setHeight(size);
+            setLength(size);
+            updateSelectedCubeSize(size, size, size);
+        }
+    }, [gestureCommands?.resizeValue, selectedCube]);
+
+    useEffect(() => {
+        if (gestureCommands?.togglePhysics && selectedCube !== null) {
+            toggleSelectedCubePhysics();
+        }
+    }, [gestureCommands?.togglePhysics, selectedCube]);
 
     return (
         <div className="fade-in-world w-screen h-screen">

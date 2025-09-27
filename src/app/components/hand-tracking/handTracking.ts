@@ -1,34 +1,6 @@
 /**
- * MediaPipe Hand Tracking Service
- * 
- * This service provides a clean, event-driven API for hand tracking using Google's MediaPipe.
- * It handles camera initialization, hand detection, and provides calibration for different users.
- * 
- * Key Features:
- * - Multi-hand tracking (up to 2 hands)
- * - Real-time gesture detection
- * - User calibration for different hand sizes
- * - Event-driven architecture for easy integration
- * - Performance optimized for web applications
- * 
- * Usage:
- * ```typescript
- * import { handTracker } from '@/lib/handTracking';
- * 
- * // Initialize with video and canvas elements
- * await handTracker.initialize(videoElement, canvasElement);
- * 
- * // Subscribe to gesture events
- * const unsubscribe = handTracker.subscribe((event) => {
- *   console.log('Gesture detected:', event);
- * });
- * 
- * // Calibrate for current user
- * handTracker.calibrate();
- * ```
- */
 
-// MediaPipe Hands - using require to avoid import issues
+ */// MediaPipe Hands 
 const mediapipe = require('@mediapipe/hands');
 const Hands = mediapipe.Hands;
 
@@ -89,18 +61,16 @@ class Camera {
   }
 }
 
-/**
- * Hand landmark point in 3D space (normalized coordinates 0-1)
- */
+
+  //Hand landmark point in 3D space (normalized coordinates 0-1)
+ 
 export interface HandLandmark {
   x: number; // Horizontal position (0 = left, 1 = right)
   y: number; // Vertical position (0 = top, 1 = bottom)  
   z: number; // Depth position (relative to wrist)
 }
 
-/**
- * Results from MediaPipe hand detection
- */
+
 export interface HandResults {
   multiHandLandmarks: HandLandmark[][];
   multiHandedness: Array<{
@@ -131,7 +101,6 @@ export type GestureCallback = (event: GestureEvent) => void;
 
 /**
  * MediaPipe Hand Tracker Class
- * 
  * This class manages the entire hand tracking pipeline:
  * 1. Camera initialization and video capture
  * 2. MediaPipe Hands model setup and processing
@@ -211,9 +180,9 @@ class MediaPipeHandTracker {
       await this.camera.start();
       this.isInitialized = true;
       
-      console.log('✅ MediaPipe Hand Tracker initialized successfully');
+      console.log(' MediaPipe Hand Tracker initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize MediaPipe Hand Tracker:', error);
+      console.error(' Failed to initialize MediaPipe Hand Tracker:', error);
       throw error;
     }
   }
@@ -251,21 +220,15 @@ class MediaPipeHandTracker {
    * @param handedness - Information about which hand this is
    */
   private processGestures(landmarks: HandLandmark[], handedness: any): void {
-    // TODO: Implement gesture detection logic in next step
-    // This will include detectPinch(), detectSpread(), detectClap()
+    
+    //  include detectPinch(), detectSpread(), detectClap()
     console.log(`Processing gestures for ${handedness.label} hand`);
   }
 
-  /**
-   * Calibrate gesture thresholds based on current user's hand size
-   * Call this method after user shows their hand to the camera
-   * 
-   * Best practice: Ask user to show their hand in a neutral position,
-   * then call this method to adjust thresholds for their hand size.
-   */
+  
   calibrate(): void {
     if (!this.lastResults || !this.lastResults.multiHandLandmarks.length) {
-      console.warn('⚠️  No hand detected for calibration. Please show your hand to the camera.');
+      console.warn('  No hand detected for calibration. Please show your hand to the camera.');
       return;
     }
 
@@ -285,9 +248,9 @@ class MediaPipeHandTracker {
       this.calibrationData.spreadDistance = handSpan * 0.8;  // 80% of hand span  
       this.calibrationData.clapDistance = handSpan * 0.5;    // 50% of hand span
       
-      console.log('✅ Calibrated gesture thresholds for hand span:', handSpan.toFixed(3));
-      console.log('📏 Pinch threshold:', this.calibrationData.pinchDistance.toFixed(3));
-      console.log('📏 Spread threshold:', this.calibrationData.spreadDistance.toFixed(3));
+      console.log(' Calibrated gesture thresholds for hand span:', handSpan.toFixed(3));
+      console.log(' Pinch threshold:', this.calibrationData.pinchDistance.toFixed(3));
+      console.log(' Spread threshold:', this.calibrationData.spreadDistance.toFixed(3));
     }
   }
 
@@ -344,7 +307,7 @@ class MediaPipeHandTracker {
 
   /**
    * Clean up resources and stop tracking
-   * Call this when you're done with hand tracking
+   * Call this when  done with hand tracking
    */
   destroy(): void {
     if (this.camera) {
@@ -355,7 +318,7 @@ class MediaPipeHandTracker {
     }
     this.callbacks = [];
     this.isInitialized = false;
-    console.log('🧹 Hand tracker destroyed');
+    console.log(' Hand tracker destroyed');
   }
 
   /**
@@ -377,23 +340,5 @@ class MediaPipeHandTracker {
 export const handTracker = new MediaPipeHandTracker();
 
 /**
- * MediaPipe Hand Landmarks Reference
- * 
- * MediaPipe detects 21 landmarks per hand:
- * 
- * Wrist: 0
- * 
- * Thumb: 1, 2, 3, 4 (from base to tip)
- * Index: 5, 6, 7, 8 (from base to tip)
- * Middle: 9, 10, 11, 12 (from base to tip)
- * Ring: 13, 14, 15, 16 (from base to tip)
- * Pinky: 17, 18, 19, 20 (from base to tip)
- * 
- * Key landmarks for gestures:
- * - Thumb tip: 4
- * - Index tip: 8
- * - Middle tip: 12
- * - Ring tip: 16
- * - Pinky tip: 20
- * - Palm center: ~9 (middle finger base)
+  * --- IGNORE ---
  */
