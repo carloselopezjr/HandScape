@@ -8,9 +8,10 @@ export default function Home() {
         Solar System Here
       </p>
 
-      <button className="mt-8 px-6 py-3 rounded-xl bg-foreground text-background hover:opacity-80 transition">
-        Enter World
+      <button className="mt-8 px-6 py-3 rounded-xl hover:opacity-80 transition" style={{ backgroundColor: "var(--foreground)", color: "var(--background)" }}>
+      Enter World
       </button>
+
     </main>
   );
 }
