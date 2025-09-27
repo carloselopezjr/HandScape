@@ -1,14 +1,15 @@
 import './globals.css';
+import Starfield from "./components/stars/starfield";
 
 export default function Home() {
   return (
     
     <main className="fade-in relative min-h-screen flex flex-col bg-background text-foreground">
 
-      <div className="starfield"></div>
+      <Starfield count={160} />
 
       {/* title */}
-      <h1 className="mt-16 text-5xl font-bold text-center">HandScape</h1>
+      <h1 className="mt-16 text-5xl font-bold text-center" style={{fontFamily: "Monday, sans-serif"}}>HandScape</h1>
 
     
       {/* Solar System */}
