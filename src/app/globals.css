@@ -24,6 +24,10 @@ body, html {
 }
 
 .fade-in {
+  animation: fadeIn 3.3s ease-in forwards;
+}
+
+.fade-in-world {
   animation: fadeIn 2.3s ease-in forwards;
 }
 
@@ -50,7 +54,7 @@ body, html {
   to   { opacity: 1;   transform: scale(1.02); }
 }
 
-/* Respect reduced motion */
+
 @media (prefers-reduced-motion: reduce) {
   .starfield { animation: none; }
 }

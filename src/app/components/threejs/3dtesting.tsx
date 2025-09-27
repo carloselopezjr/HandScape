@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { Physics, useBox } from '@react-three/cannon';
 
-// Function to create a new cube object
+// Function to create a new cube object, depracated
+/*
 function Cube({
     position,
     size,
@@ -26,6 +27,7 @@ function Cube({
         </mesh>
     );
 }
+*/
 
 // Rotating cube button (temp)
 function RotatingCube() {
@@ -49,10 +51,26 @@ function RotatingCube() {
 function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [number, number, number] | null }) {
     const { camera } = useThree();
     const orbitControlsRef = useRef<any>(null);
+    const lastTargetRef = useRef<[number, number, number] | null>(null);
+    const isAnimatingRef = useRef(false);
 
     useEffect(() => {
+        // Prevent animation if we're already animating or if the target hasn't significantly changed
+        if (isAnimatingRef.current) return;
+        
         if (selectedCubePosition && orbitControlsRef.current) {
             const [x, y, z] = selectedCubePosition;
+            
+            // Check if the position has changed significantly to avoid constant re-animation
+            if (lastTargetRef.current) {
+                const [lastX, lastY, lastZ] = lastTargetRef.current;
+                const distance = Math.sqrt((x - lastX) ** 2 + (y - lastY) ** 2 + (z - lastZ) ** 2);
+                if (distance < 2) return; // Don't animate for small movements
+            }
+            
+            lastTargetRef.current = [x, y, z];
+            isAnimatingRef.current = true;
+            
             const distance = 25;
             const height = 15;
             const cameraPosition = new THREE.Vector3(
@@ -82,11 +100,15 @@ function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [numbe
                     camera.position.copy(cameraPosition);
                     orbitControlsRef.current.target.copy(targetPosition);
                     orbitControlsRef.current.update();
+                    isAnimatingRef.current = false;
                 }
             };
 
             animateCamera();
-        } else if (!selectedCubePosition && orbitControlsRef.current) {
+        } else if (!selectedCubePosition && orbitControlsRef.current && !isAnimatingRef.current) {
+            lastTargetRef.current = null;
+            isAnimatingRef.current = true;
+            
             const defaultPosition = new THREE.Vector3(10, 10, 10);
             const defaultTarget = new THREE.Vector3(0, 0, 0);
             const startPosition = camera.position.clone();
@@ -109,6 +131,7 @@ function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [numbe
                     camera.position.copy(defaultPosition);
                     orbitControlsRef.current.target.copy(defaultTarget);
                     orbitControlsRef.current.update();
+                    isAnimatingRef.current = false;
                 }
             };
 
@@ -119,19 +142,45 @@ function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [numbe
     return <OrbitControls ref={orbitControlsRef} enablePan={true} enableZoom={true} enableRotate={true} />;
 }
 
-// Physics-enabled cube
-function PhysicsCube({ position, size, isSelected, onSelect }: {
+// Physics-enabled cube with individual physics control
+function PhysicsCube({ position, size, isSelected, onSelect, onPositionUpdate, index, physicsEnabled }: {
     position: [number, number, number],
     size: [number, number, number],
     isSelected: boolean,
-    onSelect: () => void
+    onSelect: () => void,
+    onPositionUpdate: (index: number, position: [number, number, number]) => void,
+    index: number,
+    physicsEnabled: boolean
 }) {
-    // mass = 1 means it will fall under gravity
-    const [ref] = useBox(() => ({
-        mass: 1,
+    // mass = 1 means it will fall under gravity, mass = 0 means static
+    const [ref, api] = useBox(() => ({
+        mass: physicsEnabled ? 1 : 0,
         position,
         args: size
     }));
+
+    // Update mass when physics enabled/disabled
+    useEffect(() => {
+        console.log(`Cube ${index}: Physics enabled = ${physicsEnabled}`);
+        if (physicsEnabled) {
+            api.mass.set(1);
+            console.log(`Cube ${index}: Set mass to 1 (physics enabled)`);
+        } else {
+            api.mass.set(0);
+            // When disabling physics, also set velocity to 0 to stop movement
+            api.velocity.set(0, 0, 0);
+            api.angularVelocity.set(0, 0, 0);
+            console.log(`Cube ${index}: Set mass to 0 (physics disabled)`);
+        }
+    }, [physicsEnabled, api.mass, api.velocity, api.angularVelocity, index]);
+
+    // Subscribe to position updates and report back to parent
+    useEffect(() => {
+        const unsubscribe = api.position.subscribe((pos) => {
+            onPositionUpdate(index, [pos[0], pos[1], pos[2]]);
+        });
+        return unsubscribe;
+    }, [api.position, onPositionUpdate, index]);
 
     return (
         <mesh ref={ref} onClick={onSelect}>
@@ -159,6 +208,17 @@ function Baseplate() {
     )
 }
 
+// Static baseplate (no physics)
+function StaticBaseplate() {
+    return (
+        <mesh position={[0, -1.25, 0]}>
+            <boxGeometry args={[100, 2.5, 100]} />
+            <meshStandardMaterial color="grey" />
+            <Edges color="black" />
+        </mesh>
+    )
+}
+
 export default function CubeScene() {
     // State to manage cubes, storing position & size
     const [cubes, setCubes] = useState<Array<{ position: [number, number, number]; size: [number, number, number] }>>([]);
@@ -169,11 +229,43 @@ export default function CubeScene() {
     const [height, setHeight] = useState(5);
     const [length, setLength] = useState(5);
 
+    // Track which cubes have physics enabled (per-cube basis)
+    const [cubePhysicsEnabled, setCubePhysicsEnabled] = useState<Array<boolean>>([]);
+
+    // Track current positions of physics cubes
+    const [currentPositions, setCurrentPositions] = useState<Array<[number, number, number]>>([]);
+
     const createCube = () => {
         const x = Math.random() * 5;
         const y = Math.random() * 25;
         const z = Math.random() * 100;
-        setCubes([...cubes, { position: [x, y, z], size: [5, 5, 5] }]);
+        const newPosition: [number, number, number] = [x, y, z];
+        setCubes([...cubes, { position: newPosition, size: [5, 5, 5] }]);
+        setCurrentPositions([...currentPositions, newPosition]);
+        setCubePhysicsEnabled([...cubePhysicsEnabled, true]); // New cubes start with physics enabled
+        console.log('Created new cube, total cubes:', cubes.length + 1, 'physics states:', [...cubePhysicsEnabled, true]);
+    };
+
+    // Handle position updates from physics cubes
+    const handlePositionUpdate = (index: number, position: [number, number, number]) => {
+        setCurrentPositions(prev => {
+            const updated = [...prev];
+            updated[index] = position;
+            return updated;
+        });
+    };
+
+    // Toggle physics for the selected cube only
+    const toggleSelectedCubePhysics = () => {
+        if (selectedCube !== null) {
+            console.log('Toggling physics for cube', selectedCube, 'from', cubePhysicsEnabled[selectedCube], 'to', !cubePhysicsEnabled[selectedCube]);
+            setCubePhysicsEnabled(prev => {
+                const updated = [...prev];
+                updated[selectedCube] = !updated[selectedCube];
+                console.log('Updated physics state:', updated);
+                return updated;
+            });
+        }
     };
 
     const handleCubeSelection = (index: number) => {
@@ -196,7 +288,7 @@ export default function CubeScene() {
     };
 
     return (
-        <div className="w-screen h-screen">
+        <div className="fade-in-world w-screen h-screen">
             {/* UI overlay */}
             <div className="absolute ml-10 mt-5 top-4 left-4 z-10">
                 <div className="rounded-xl border w-20 h-20 backdrop-blur-md border-[#140d30]">
@@ -213,8 +305,21 @@ export default function CubeScene() {
                     Reset Camera
                 </button>
 
+                {/* Physics toggle button for selected cube */}
+                {selectedCube !== null && (
+                    <button
+                        onClick={toggleSelectedCubePhysics}
+                        className="text-white mt-2 pt-2 rounded hover:bg-gray-600 transition-all"
+                    >
+                        {(cubePhysicsEnabled[selectedCube] ?? true) ? "Disable Gravity" : "Enable Gravity"}
+                    </button>
+                )}
+
                 {selectedCube !== null && (
                     <div className="mt-2 text-white">
+                        <div className="mb-2 text-sm">
+                            Selected Cube #{selectedCube + 1} - Physics: {(cubePhysicsEnabled[selectedCube] ?? true) ? "ON" : "OFF"}
+                        </div>
                         <div className="">
                             Width: {width.toFixed(1)}
                             <input
@@ -270,19 +375,20 @@ export default function CubeScene() {
                 <ambientLight intensity={Math.PI / 2} />
                 <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
                 <pointLight position={[-10, -10, -10]} decay={0} intensity={Math.PI} />
-
-                {/* Baseplate not affected by gravity */}
+                
+                {/* Baseplate + cubes with individual physics control */}
                 <Physics gravity={[0, -9.8, 0]}>
                     <Baseplate />
-
-                    {/* Render cubes with physics */}
                     {cubes.map((key, index) => (
                         <PhysicsCube
                             key={index}
+                            index={index}
                             position={key.position}
                             size={key.size}
                             isSelected={selectedCube === index}
                             onSelect={() => handleCubeSelection(index)}
+                            onPositionUpdate={handlePositionUpdate}
+                            physicsEnabled={cubePhysicsEnabled[index] ?? true}
                         />
                     ))}
                 </Physics>
