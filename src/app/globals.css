@@ -11,5 +11,69 @@ body, html {
   padding: 0;
   font-family: Arial, Helvetica, sans-serif;
   color: var(--foreground);
-  background: radial-gradient(circle at center, var(--background) 0%, #262544 100%);
+  background: radial-gradient(circle at center, var(--background) 0%, #000000 100%);
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 2.3s ease-in forwards;
+}
+
+
+.starfield {
+  position: fixed;
+  inset: 0;
+  z-index: 0;             
+  pointer-events: none;     
+  background:
+    /* small stars */
+    radial-gradient(1px 1px at 20% 30%, #ffffffcc 40%, transparent 41%) repeat,
+    /* medium stars */
+    radial-gradient(2px 2px at 60% 70%, #ffffff99 40%, transparent 41%) repeat,
+    /* larger stars */
+    radial-gradient(2.5px 2.5px at 80% 20%, #ffffff66 40%, transparent 41%) repeat;
+  background-size: 180px 180px, 260px 260px, 340px 340px;
+  animation: twinkle 4s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 2px #fff);
+}
+
+@keyframes twinkle {
+  from { opacity: 0.6; transform: scale(1); }
+  to   { opacity: 1;   transform: scale(1.02); }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .starfield { animation: none; }
+}
+
+.radial-gradient {
+  background: radial-gradient(
+    circle at 50% 0%, 
+    rgba(250, 250, 250, 0.05) 0%,
+    transparent 60%
+  ), rgba(15, 15, 15, 1);
+}
+
+.linear-mask {
+  mask-image: linear-gradient(
+    -75deg,
+    white calc(var(--x) + 20%),
+    transparent calc(var(--x) + 30%),
+    white calc(var(--x) + 100%)
+  );
+  -webkit-mask-image: linear-gradient(
+    -75deg,
+    white calc(var(--x) + 20%),
+    transparent calc(var(--x) + 30%),
+    white calc(var(--x) + 100%)
+  );
 }
