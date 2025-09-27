@@ -10,10 +10,10 @@ export default function Home() {
     
     <main className="fade-in relative min-h-screen flex flex-col bg-background text-foreground">
 
-      <Starfield count={160} />
+      <Starfield count={100} />
 
       {/* title */} 
-      <h1 className="z-20 mt-16 text-5xl font-bold text-center">HandScape</h1>
+      <h1 className="z-20 mt-16 text-5xl font-bold text-center" style={{fontFamily: "Cubest-Medium, sans-serif"}}>HandScape</h1>
 
     
       {/* Solar System */}

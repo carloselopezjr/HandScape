@@ -2,8 +2,8 @@
 
 /* font */
 @font-face {
-  font-family: "Monday";
-  src: url("/fonts/Monday.ttf") format("truetype");
+  font-family: "Cubest-Medium";
+  src: url("/fonts/Cubest-Medium.otf") format("truetype");
   font-weight: normal;
   font-style: normal;
   font-display: swap;
