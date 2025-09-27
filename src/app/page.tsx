@@ -5,6 +5,8 @@ export default function Home() {
     
     <main className="fade-in relative min-h-screen flex flex-col bg-background text-foreground">
 
+      <div className="starfield"></div>
+
       {/* title */}
       <h1 className="mt-16 text-5xl font-bold text-center">HandScape</h1>
 
@@ -17,12 +19,13 @@ export default function Home() {
       </div>
 
       {/* Enter World */}
-      <button
-        className="mb-12 px-6 py-3 rounded-xl hover:opacity-80 transition self-center"
-        style={{ backgroundColor: "var(--foreground)", color: "var(--background)" }}
-      >
-        Enter World
+      <button className="mb-25 self-center relative inline-flex h-16 w-50 overflow-hidden rounded-2xl p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50">
+        <span className="absolute inset-[-1000%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)]" />
+        <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-3 py-1 text-lg font-medium text-white backdrop-blur-3xl">
+          Enter World
+        </span>
       </button>
+
     </main>
   );
 }
