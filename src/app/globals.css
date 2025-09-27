@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* font */
+@font-face {
+  font-family: "Cubest-Medium";
+  src: url("/fonts/Cubest-Medium.otf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #140d30;
   --foreground: #ededed;
@@ -32,31 +41,33 @@ body, html {
 }
 
 
-.starfield {
+.starfield-layer {
   position: fixed;
   inset: 0;
-  z-index: 0;             
-  pointer-events: none;     
-  background:
-    /* small stars */
-    radial-gradient(1px 1px at 20% 30%, #ffffffcc 40%, transparent 41%) repeat,
-    /* medium stars */
-    radial-gradient(2px 2px at 60% 70%, #ffffff99 40%, transparent 41%) repeat,
-    /* larger stars */
-    radial-gradient(2.5px 2.5px at 80% 20%, #ffffff66 40%, transparent 41%) repeat;
-  background-size: 180px 180px, 260px 260px, 340px 340px;
-  animation: twinkle 4s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 2px #fff);
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
 }
 
-@keyframes twinkle {
-  from { opacity: 0.6; transform: scale(1); }
-  to   { opacity: 1;   transform: scale(1.02); }
+.star-dot {
+  position: absolute;
+  border-radius: 9999px;
+  background: #ffffff;
+  opacity: 0;
+  animation-name: starBlink;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  filter: drop-shadow(0 0 3px #ffffff);
 }
 
+@keyframes starBlink {
+  0%   { opacity: 0; transform: scale(0.9); }
+  50%  { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0; transform: scale(0.95); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .starfield { animation: none; }
+  .star-dot { animation: none; opacity: 0.8; }
 }
 
 .radial-gradient {
