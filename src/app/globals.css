@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #262544;
+  --background: #140d30;
   --foreground: #ededed;
 }
 
@@ -11,7 +11,7 @@ body, html {
   padding: 0;
   font-family: Arial, Helvetica, sans-serif;
   color: var(--foreground);
-  background: radial-gradient(circle at center, var(--background) 0%, #140d30 100%);
+  background: radial-gradient(circle at center, var(--background) 0%, #000000 100%);
 }
 
 @keyframes fadeIn {
