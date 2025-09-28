@@ -6,34 +6,37 @@ import CubeScene from './3dtesting';
 export function SimpleHandTrackingTest() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const lastGestureTime = useRef<{[key: string]: number}>({});
+  const lastGestureTime = useRef<number>(0);
   const [status, setStatus] = useState('Initializing...');
+  const [handsDetected, setHandsDetected] = useState<{
+    count: number;
+    leftHand: boolean;
+    rightHand: boolean;
+  }>({ count: 0, leftHand: false, rightHand: false });
   const [gestureCommands, setGestureCommands] = useState({
     createCube: false,
     selectCube: false,
     resizeValue: 1.0,
     togglePhysics: false,
+    moveCube: false,
+    handPosition: { x: 0, y: 0, z: 0 },
+    leftHandStretch: false,
+    stretchDirection: 'none' as 'horizontal' | 'vertical' | 'none',
+    stretchIntensity: 1.0,
   });
   const [lastGesture, setLastGesture] = useState('');
 
   useEffect(() => {
     const testVideoElements = () => {
-      console.log('🔍 Testing video elements...');
-      console.log('Video ref:', videoRef.current);
-      console.log('Canvas ref:', canvasRef.current);
-      
       if (videoRef.current && canvasRef.current) {
-        setStatus('✅ Video elements ready! Starting camera...');
         startCamera();
       } else {
-        setStatus('❌ Video elements not found');
-        setTimeout(testVideoElements, 1000); // Try again in 1 second
+        setTimeout(testVideoElements, 1000); // Try again after 1 second
       }
     };
 
     const startCamera = async () => {
       try {
-        console.log('📹 Requesting camera access...');
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { width: 320, height: 240 } 
         });
@@ -41,19 +44,16 @@ export function SimpleHandTrackingTest() {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
-          setStatus('📹 Camera active! Initializing real hand tracking...');
           initializeRealHandTracking();
         }
       } catch (error) {
         console.error('Camera error:', error);
-        setStatus('⚠️ Camera failed - using keyboard controls only');
-        setupKeyboardControls();
+        setStatus('⚠️ Camera failed - hand tracking disabled');
       }
     };
 
     const initializeRealHandTracking = async () => {
       try {
-        console.log('🖐️ Loading MediaPipe for real hand detection...');
         
         // Try to load MediaPipe
         const { Hands } = await import('@mediapipe/hands');
@@ -75,8 +75,6 @@ export function SimpleHandTrackingTest() {
         hands.onResults((results: any) => {
           processHandResults(results);
         });
-
-        setStatus('🖐️ Real hand tracking active! Show your hands to the camera');
         
         // Start processing video frames
         const processFrame = async () => {
@@ -94,8 +92,7 @@ export function SimpleHandTrackingTest() {
         
       } catch (error) {
         console.error('MediaPipe failed to load:', error);
-        setStatus('⚠️ MediaPipe failed - using keyboard controls only');
-        setupKeyboardControls();
+        setStatus('⚠️ MediaPipe failed - hand tracking disabled');
       }
     };
 
@@ -109,35 +106,52 @@ export function SimpleHandTrackingTest() {
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
+      // Update hand detection state
+      let leftDetected = false;
+      let rightDetected = false;
+      
       // Draw hand landmarks if hands detected
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
           const landmarks = results.multiHandLandmarks[i];
           const handedness = results.multiHandedness[i]?.label || 'Unknown';
           
+          // Track which hands are detected
+          if (handedness === 'Left') leftDetected = true;
+          if (handedness === 'Right') rightDetected = true;
+          
+          // Check for gestures with hand-specific filtering
+          const fistGesture = detectFist(landmarks, handedness);
+          const pointGesture = detectIndexFingerPointing(landmarks, handedness);
+          const palmGesture = detectPalmOpen(landmarks, handedness);
+          const leftStretchGesture = detectLeftHandStretch(landmarks, handedness);
+          
+          // Execute gestures with hand-specific rules:
+          // - Left hand: Fist gestures (for moving cubes) and stretch gestures (for resizing)
+          // - Right hand: Only palm open (for selecting) and pointing (for creating)
+          if (fistGesture && handedness === 'Left') {
+            executeGesture(fistGesture);
+          } else if (leftStretchGesture && handedness === 'Left') {
+            executeGesture(leftStretchGesture);
+          } else if (pointGesture && handedness === 'Right') {
+            executeGesture(pointGesture);
+          } else if (palmGesture && handedness === 'Right') {
+            executeGesture(palmGesture);
+          }
+          
           // Draw hand skeleton
-          drawHand(ctx, landmarks, i === 0 ? '#00ff00' : '#0080ff');
+          drawHand(ctx, landmarks, handedness === 'Left' ? '#00ff00' : '#9c52c7');
         }
         
-        // Handle single hand gestures
-        if (results.multiHandLandmarks.length === 1) {
-          const landmarks = results.multiHandLandmarks[0];
-          const handedness = results.multiHandedness[0]?.label || 'Unknown';
-          const gesture = detectSingleHandGesture(landmarks, handedness);
-          
-          if (gesture) {
-            executeGesture(gesture);
-          }
-        }
-        
-        // Handle two-hand gestures (stretch/shrink)
-        if (results.multiHandLandmarks.length === 2) {
-          const twoHandGesture = detectTwoHandGesture(results);
-          
-          if (twoHandGesture) {
-            executeGesture(twoHandGesture);
-          }
-        }
+        // Update hands detected state
+        setHandsDetected({
+          count: results.multiHandLandmarks.length,
+          leftHand: leftDetected,
+          rightHand: rightDetected
+        });
+      } else {
+        // No hands detected
+        setHandsDetected({ count: 0, leftHand: false, rightHand: false });
       }
     };
 
@@ -181,211 +195,277 @@ export function SimpleHandTrackingTest() {
       ctx.stroke();
     };
 
-    const detectSingleHandGesture = (landmarks: any[], handedness: string) => {
+    const detectIndexFingerPointing = (landmarks: any[], handedness: string) => {
+      // MediaPipe hand landmarks indices:
+      // 8 = Index finger tip, 6 = Index finger middle joint, 5 = Index finger base
+      // 12 = Middle finger tip, 16 = Ring finger tip, 20 = Pinky tip
+      // 4 = Thumb tip
+      
+      const indexTip = landmarks[8];
+      const indexMiddle = landmarks[6];
+      const indexBase = landmarks[5];
+      const middleTip = landmarks[12];
+      const ringTip = landmarks[16];
+      const pinkyTip = landmarks[20];
+      const thumbTip = landmarks[4];
+      const wrist = landmarks[0];
+      
+      // Check if index finger is extended (tip above middle joint)
+      const indexExtended = indexTip.y < indexMiddle.y && indexMiddle.y < indexBase.y;
+      
+      // Check if other fingers are folded (tips below their middle joints)
+      const middleFolded = middleTip.y > landmarks[10].y; // Middle finger middle joint
+      const ringFolded = ringTip.y > landmarks[14].y; // Ring finger middle joint
+      const pinkyFolded = pinkyTip.y > landmarks[18].y; // Pinky middle joint
+      
+      // Check if thumb is not extended upward (to distinguish from "thumbs up")
+      const thumbNotPointing = Math.abs(thumbTip.y - wrist.y) < Math.abs(indexTip.y - wrist.y);
+      
+      // Check if index finger is pointing roughly upward (y coordinate smaller = higher up)
+      const pointingUp = indexTip.y < indexBase.y - 0.05; // Some threshold for upward direction
+      
+      if (indexExtended && middleFolded && ringFolded && pinkyFolded && thumbNotPointing && pointingUp) {
+        return { type: 'INDEX_POINT_UP', handedness };
+      }
+      
+      return null;
+    };
+
+    const detectPalmOpen = (landmarks: any[], handedness: string) => {
+      // MediaPipe hand landmarks indices for fingertips and joints
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
       const middleTip = landmarks[12];
       const ringTip = landmarks[16];
       const pinkyTip = landmarks[20];
       
-      // Calculate distances
-      const thumbIndexDist = Math.sqrt(
-        (thumbTip.x - indexTip.x) ** 2 + (thumbTip.y - indexTip.y) ** 2
+      // Finger middle joints for extension check
+      const thumbMiddle = landmarks[3];
+      const indexMiddle = landmarks[6];
+      const middleMiddle = landmarks[10];
+      const ringMiddle = landmarks[14];
+      const pinkyMiddle = landmarks[18];
+      
+      const wrist = landmarks[0];
+      
+      // Check if all fingers are extended (tips further from wrist than middle joints)
+      const thumbExtended = Math.sqrt(
+        Math.pow(thumbTip.x - wrist.x, 2) + Math.pow(thumbTip.y - wrist.y, 2)
+      ) > Math.sqrt(
+        Math.pow(thumbMiddle.x - wrist.x, 2) + Math.pow(thumbMiddle.y - wrist.y, 2)
       );
       
-      const fingersSpread = Math.sqrt(
-        (indexTip.x - pinkyTip.x) ** 2 + (indexTip.y - pinkyTip.y) ** 2
+      const indexExtended = indexTip.y < indexMiddle.y;
+      const middleExtended = middleTip.y < middleMiddle.y;
+      const ringExtended = ringTip.y < ringMiddle.y;
+      const pinkyExtended = pinkyTip.y < pinkyMiddle.y;
+      
+      // Check finger spread - calculate distances between fingertips
+      const indexPinkySpread = Math.sqrt(
+        Math.pow(indexTip.x - pinkyTip.x, 2) + Math.pow(indexTip.y - pinkyTip.y, 2)
       );
       
-      // Pinch detection
-      if (thumbIndexDist < 0.05) {
-        return { type: 'PINCH', handedness };
-      }
-      
-      // Spread detection
-      if (fingersSpread > 0.2) {
-        return { type: 'SPREAD', handedness };
-      }
-      
-      return null;
-    };
-
-    const detectTwoHandGesture = (results: any) => {
-      const leftHand = results.multiHandLandmarks[0];
-      const rightHand = results.multiHandLandmarks[1];
-      const leftHandedness = results.multiHandedness[0]?.label || 'Left';
-      const rightHandedness = results.multiHandedness[1]?.label || 'Right';
-      
-      // Get thumb-index distances for both hands
-      const leftThumbTip = leftHand[4];
-      const leftIndexTip = leftHand[8];
-      const rightThumbTip = rightHand[4];
-      const rightIndexTip = rightHand[8];
-      
-      const leftPinchDist = Math.sqrt(
-        (leftThumbTip.x - leftIndexTip.x) ** 2 + (leftThumbTip.y - leftIndexTip.y) ** 2
-      );
-      const rightPinchDist = Math.sqrt(
-        (rightThumbTip.x - rightIndexTip.x) ** 2 + (rightThumbTip.y - rightIndexTip.y) ** 2
+      const thumbIndexSpread = Math.sqrt(
+        Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2)
       );
       
-      // Both hands must be pinching for stretch/shrink gestures
-      const leftPinching = leftPinchDist < 0.08;
-      const rightPinching = rightPinchDist < 0.08;
+      // Minimum spread thresholds for palm open detection
+      const sufficientFingerSpread = indexPinkySpread > 0.15; // Fingers spread wide
+      const sufficientThumbSpread = thumbIndexSpread > 0.08; // Thumb separated from fingers
       
-      if (leftPinching && rightPinching) {
-        // Calculate hand positions for direction detection
-        const leftCenter = {
-          x: (leftThumbTip.x + leftIndexTip.x) / 2,
-          y: (leftThumbTip.y + leftIndexTip.y) / 2
-        };
-        const rightCenter = {
-          x: (rightThumbTip.x + rightIndexTip.x) / 2,
-          y: (rightThumbTip.y + rightIndexTip.y) / 2
-        };
-        
-        const horizontalSpread = Math.abs(leftCenter.x - rightCenter.x);
-        const verticalSpread = Math.abs(leftCenter.y - rightCenter.y);
-        const totalDistance = Math.sqrt(
-          (leftCenter.x - rightCenter.x) ** 2 + (leftCenter.y - rightCenter.y) ** 2
-        );
-        
-        // Determine if movement is primarily horizontal or vertical
-        const isHorizontalPrimary = horizontalSpread > verticalSpread * 1.2;
-        const isVerticalPrimary = verticalSpread > horizontalSpread * 1.2;
-        
-        // Store current measurement for comparison
-        if (!detectTwoHandGesture.lastMeasurement) {
-          detectTwoHandGesture.lastMeasurement = { totalDistance, timestamp: Date.now() };
-          return null;
-        }
-        
-        const timeDiff = Date.now() - detectTwoHandGesture.lastMeasurement.timestamp;
-        if (timeDiff < 300) return null; // Wait for stable measurement
-        
-        const distanceChange = totalDistance - detectTwoHandGesture.lastMeasurement.totalDistance;
-        
-        // Update last measurement
-        detectTwoHandGesture.lastMeasurement = { totalDistance, timestamp: Date.now() };
-        
-        // Must have significant change to register
-        if (Math.abs(distanceChange) < 0.03) return null;
-        
-        if (distanceChange > 0) { // Hands moving apart = STRETCH
-          if (isVerticalPrimary) {
-            return { type: 'STRETCH_VERTICAL', handedness: 'Both' };
-          } else if (isHorizontalPrimary) {
-            return { type: 'STRETCH_HORIZONTAL', handedness: 'Both' };
-          }
-        } else { // Hands moving together = SHRINK
-          if (isVerticalPrimary) {
-            return { type: 'SHRINK_VERTICAL', handedness: 'Both' };
-          } else if (isHorizontalPrimary) {
-            return { type: 'SHRINK_HORIZONTAL', handedness: 'Both' };
-          }
-        }
-      } else {
-        // Reset measurement when hands are not both pinching
-        detectTwoHandGesture.lastMeasurement = null;
+      if (thumbExtended && indexExtended && middleExtended && ringExtended && pinkyExtended && 
+          sufficientFingerSpread && sufficientThumbSpread) {
+        return { type: 'PALM_OPEN', handedness };
       }
       
       return null;
     };
 
-    const executeGesture = (gesture: { type: string, handedness: string }) => {
-      const currentTime = Date.now();
-      const key = `${gesture.type}_${gesture.handedness}`;
+    const detectFist = (landmarks: any[], handedness: string) => {
+      // MediaPipe hand landmarks indices for fingertips and joints
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      const middleTip = landmarks[12];
+      const ringTip = landmarks[16];
+      const pinkyTip = landmarks[20];
       
-      // Debounce gestures (prevent rapid firing)
-      const lastTime = lastGestureTime.current[key] || 0;
-      if (currentTime - lastTime < 800) return; // 800ms debounce for two-hand gestures
+      // Finger middle joints for fold check
+      const thumbMiddle = landmarks[3];
+      const indexMiddle = landmarks[6];
+      const middleMiddle = landmarks[10];
+      const ringMiddle = landmarks[14];
+      const pinkyMiddle = landmarks[18];
       
-      lastGestureTime.current[key] = currentTime;
+      const wrist = landmarks[0];
       
-      console.log('🖐️ Real gesture detected:', gesture);
-      
-      switch (gesture.type) {
-        case 'PINCH':
-          if (gesture.handedness === 'Right') {
-            setLastGesture('CREATE (right pinch)');
-            setGestureCommands(prev => ({ ...prev, createCube: !prev.createCube }));
-          } else {
-            setLastGesture('SELECT (left pinch)');
-            setGestureCommands(prev => ({ ...prev, selectCube: !prev.selectCube }));
-          }
-          break;
-          
-        case 'STRETCH_HORIZONTAL':
-          setLastGesture('STRETCH HORIZONTAL (both hands)');
-          setGestureCommands(prev => ({ 
-            ...prev, 
-            resizeValue: Math.min(3.0, prev.resizeValue + 0.4) 
-          }));
-          break;
-          
-        case 'STRETCH_VERTICAL':
-          setLastGesture('STRETCH VERTICAL (both hands)');
-          setGestureCommands(prev => ({ 
-            ...prev, 
-            resizeValue: Math.min(3.0, prev.resizeValue + 0.4) 
-          }));
-          break;
-          
-        case 'SHRINK_HORIZONTAL':
-          setLastGesture('SHRINK HORIZONTAL (both hands)');
-          setGestureCommands(prev => ({ 
-            ...prev, 
-            resizeValue: Math.max(0.3, prev.resizeValue - 0.4) 
-          }));
-          break;
-          
-        case 'SHRINK_VERTICAL':
-          setLastGesture('SHRINK VERTICAL (both hands)');
-          setGestureCommands(prev => ({ 
-            ...prev, 
-            resizeValue: Math.max(0.3, prev.resizeValue - 0.4) 
-          }));
-          break;
-          
-        case 'SPREAD':
-          if (gesture.handedness === 'Right') {
-            setLastGesture('RESET SIZE (right spread)');
-            setGestureCommands(prev => ({ ...prev, resizeValue: 1.0 }));
-          } else {
-            setLastGesture('PHYSICS (left spread)');
-            setGestureCommands(prev => ({ ...prev, togglePhysics: !prev.togglePhysics }));
-          }
-          break;
-      }
-    };
-
-    const setupKeyboardControls = () => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-        switch (e.key.toLowerCase()) {
-          case 'c':
-            setLastGesture('CREATE (keyboard)');
-            setGestureCommands(prev => ({ ...prev, createCube: !prev.createCube }));
-            break;
-          case 's':
-            setLastGesture('SELECT (keyboard)');
-            setGestureCommands(prev => ({ ...prev, selectCube: !prev.selectCube }));
-            break;
-          case 'r':
-            setLastGesture('RESIZE (keyboard)');
-            setGestureCommands(prev => ({ 
-              ...prev, 
-              resizeValue: prev.resizeValue >= 2 ? 0.5 : prev.resizeValue + 0.5 
-            }));
-            break;
-          case 'p':
-            setLastGesture('PHYSICS (keyboard)');
-            setGestureCommands(prev => ({ ...prev, togglePhysics: !prev.togglePhysics }));
-            break;
-        }
+      // Calculate hand center for position tracking
+      const handCenter = {
+        x: (landmarks[0].x + landmarks[9].x + landmarks[13].x + landmarks[17].x) / 4,
+        y: (landmarks[0].y + landmarks[9].y + landmarks[13].y + landmarks[17].y) / 4,
+        z: (landmarks[0].z + landmarks[9].z + landmarks[13].z + landmarks[17].z) / 4
       };
       
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
+      // Check if fingers are folded (tips closer to wrist than middle joints)
+      const indexFolded = Math.sqrt(
+        Math.pow(indexTip.x - wrist.x, 2) + Math.pow(indexTip.y - wrist.y, 2)
+      ) < Math.sqrt(
+        Math.pow(indexMiddle.x - wrist.x, 2) + Math.pow(indexMiddle.y - wrist.y, 2)
+      );
+      
+      const middleFolded = Math.sqrt(
+        Math.pow(middleTip.x - wrist.x, 2) + Math.pow(middleTip.y - wrist.y, 2)
+      ) < Math.sqrt(
+        Math.pow(middleMiddle.x - wrist.x, 2) + Math.pow(middleMiddle.y - wrist.y, 2)
+      );
+      
+      const ringFolded = Math.sqrt(
+        Math.pow(ringTip.x - wrist.x, 2) + Math.pow(ringTip.y - wrist.y, 2)
+      ) < Math.sqrt(
+        Math.pow(ringMiddle.x - wrist.x, 2) + Math.pow(ringMiddle.y - wrist.y, 2)
+      );
+      
+      const pinkyFolded = Math.sqrt(
+        Math.pow(pinkyTip.x - wrist.x, 2) + Math.pow(pinkyTip.y - wrist.y, 2)
+      ) < Math.sqrt(
+        Math.pow(pinkyMiddle.x - wrist.x, 2) + Math.pow(pinkyMiddle.y - wrist.y, 2)
+      );
+      
+      // Thumb should also be tucked in for a proper fist
+      const thumbFolded = Math.sqrt(
+        Math.pow(thumbTip.x - wrist.x, 2) + Math.pow(thumbTip.y - wrist.y, 2)
+      ) < Math.sqrt(
+        Math.pow(thumbMiddle.x - wrist.x, 2) + Math.pow(thumbMiddle.y - wrist.y, 2)
+      ) * 1.2; // Slightly more lenient for thumb
+      
+      if (indexFolded && middleFolded && ringFolded && pinkyFolded && thumbFolded) {
+        return { type: 'FIST', handedness, handCenter };
+      }
+      
+      return null;
+    };
+
+    const detectLeftHandStretch = (landmarks: any[], handedness: string) => {
+      // Only process left hand for this gesture
+      if (handedness !== 'Left') return null;
+      
+      // MediaPipe hand landmarks: 4 = Thumb tip, 8 = Index finger tip
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      const wrist = landmarks[0];
+      
+      // Calculate the distance between thumb and index finger
+      const thumbIndexDistance = Math.sqrt(
+        Math.pow(thumbTip.x - indexTip.x, 2) + 
+        Math.pow(thumbTip.y - indexTip.y, 2) + 
+        Math.pow(thumbTip.z - indexTip.z, 2)
+      );
+      
+      // Check if the stretch is significant (threshold for activation)
+      const stretchThreshold = 0.08; // Adjust this value as needed
+      const baseDistance = 0.05; // Base distance when fingers are close
+      
+      if (thumbIndexDistance > stretchThreshold) {
+        // Calculate stretch intensity (how far apart the fingers are)
+        const stretchIntensity = Math.min((thumbIndexDistance - baseDistance) / 0.1, 3.0); // Cap at 3x
+        
+        // Determine stretch direction based on the vector between thumb and index
+        const deltaX = Math.abs(thumbTip.x - indexTip.x);
+        const deltaY = Math.abs(thumbTip.y - indexTip.y);
+        
+        // If horizontal separation is greater than vertical, it's horizontal stretching
+        const direction = deltaX > deltaY ? 'horizontal' : 'vertical';
+        
+        return { 
+          type: 'LEFT_HAND_STRETCH', 
+          handedness, 
+          direction, 
+          intensity: 1.0 + stretchIntensity // Base scale 1.0 + stretch factor
+        };
+      }
+      
+      return null;
+    };
+
+    const executeGesture = (gesture: { type: string, handedness: string, handCenter?: any, direction?: string, intensity?: number }) => {
+      const currentTime = Date.now();
+      
+      // For fist and stretch gestures, allow continuous updates (no debounce for movement/resizing)
+      if (gesture.type === 'FIST') {
+        // Convert normalized coordinates to 3D space with improved control and boundary constraints
+        const rawX = (gesture.handCenter.x - 0.5) * 80; // Wider X range: -40 to +40
+        const rawY = (0.5 - gesture.handCenter.y) * 50; // Better Y range: 0 to 50
+        const rawZ = (gesture.handCenter.z - 0.5) * 60; // Centered Z range: -30 to +30
+        
+        // Apply boundary constraints to keep cubes above baseplate and within reasonable bounds
+        const handPosition = {
+          x: Math.max(-45, Math.min(45, rawX)), // Constrain to baseplate X bounds
+          y: Math.max(2.5, Math.min(50, rawY)), // Keep above baseplate (y=0) with 2.5 unit clearance
+          z: Math.max(-45, Math.min(45, rawZ))  // Constrain to baseplate Z bounds
+        };
+        
+        setLastGesture(`MOVE CUBE (LEFT hand fist)`);
+        setGestureCommands(prev => ({ 
+          ...prev, 
+          moveCube: true,
+          handPosition: handPosition,
+          leftHandStretch: false, // Reset stretch when fist is detected
+          stretchDirection: 'none',
+          stretchIntensity: 1.0
+        }));
+        return;
+      }
+      
+      // For stretch gesture, allow continuous updates
+      if (gesture.type === 'LEFT_HAND_STRETCH') {
+        const direction = gesture.direction || 'none';
+        const intensity = gesture.intensity || 1.0;
+        setLastGesture(`STRETCH CUBE (LEFT hand ${direction} stretch)`);
+        setGestureCommands(prev => ({ 
+          ...prev, 
+          leftHandStretch: true,
+          stretchDirection: direction as 'horizontal' | 'vertical' | 'none',
+          stretchIntensity: intensity,
+          moveCube: false // Reset movement when stretch is detected
+        }));
+        return;
+      }
+      
+      // Reset movement and stretch when not making fist or stretch
+      setGestureCommands(prev => ({ 
+        ...prev, 
+        moveCube: false,
+        handPosition: { x: 0, y: 0, z: 0 },
+        leftHandStretch: false,
+        stretchDirection: 'none',
+        stretchIntensity: 1.0
+      }));
+      
+      // Debounce other gestures (prevent rapid firing)
+      if (currentTime - lastGestureTime.current < 1000) return; // 1 second debounce
+      
+      lastGestureTime.current = currentTime;
+      
+      switch (gesture.type) {
+        case 'INDEX_POINT_UP':
+          setLastGesture(`CREATE CUBE (RIGHT hand index point up)`);
+          setGestureCommands(prev => ({ ...prev, createCube: !prev.createCube }));
+          break;
+        case 'PALM_OPEN':
+          setLastGesture(`SELECT CUBE (RIGHT hand palm open)`);
+          setGestureCommands(prev => ({ ...prev, selectCube: !prev.selectCube }));
+          break;
+        case 'LEFT_HAND_STRETCH':
+          const direction = gesture.direction || 'none';
+          const intensity = gesture.intensity || 1.0;
+          setLastGesture(`STRETCH CUBE (LEFT hand ${direction} stretch)`);
+          setGestureCommands(prev => ({ 
+            ...prev, 
+            leftHandStretch: true,
+            stretchDirection: direction as 'horizontal' | 'vertical' | 'none',
+            stretchIntensity: intensity
+          }));
+          break;
+      }
     };
 
     // Start the test after a short delay
@@ -393,7 +473,7 @@ export function SimpleHandTrackingTest() {
   }, []);
 
   return (
-    <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100vh', position: 'relative'  }}>
       {/* Always render video elements */}
       <video
         ref={videoRef}
@@ -403,10 +483,10 @@ export function SimpleHandTrackingTest() {
           right: '10px',
           width: '200px',
           height: '150px',
-          border: '2px solid #0080ff',
-          borderRadius: '8px',
+          borderRadius: '4px',
           transform: 'scaleX(-1)',
-          background: '#000'
+          background: '#000',
+          zIndex: 100
         }}
         autoPlay
         muted
@@ -421,96 +501,40 @@ export function SimpleHandTrackingTest() {
           position: 'absolute',
           top: '180px',
           right: '10px',
-          border: '1px solid #ccc',
-          borderRadius: '4px'
+          border: '1px solid #140d30',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '4px',
+          zIndex: 100
         }}
       />
       
-      {/* Status Panel */}
-      <div style={{
-        position: 'absolute',
-        bottom: '10px',
-        left: '10px',
-        background: 'rgba(0, 0, 0, 0.85)',
-        color: 'white',
-        padding: '8px 10px',
-        borderRadius: '6px',
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        zIndex: 1000,
-        minWidth: '200px',
-        maxWidth: '220px'
-      }}>
-        <div style={{ fontSize: '12px', fontWeight: 'bold' }}>🧪 Hand Tracking</div>
-        <div style={{ marginTop: '3px', fontSize: '10px' }}>{status}</div>
-        <div style={{ marginTop: '6px', fontSize: '10px' }}>
-          <div><strong>Last:</strong> {lastGesture || 'None'}</div>
-          <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
-            <span>C:{gestureCommands.createCube ? '✅' : '⭕'}</span>
-            <span>S:{gestureCommands.selectCube ? '✅' : '⭕'}</span>
-            <span>R:{gestureCommands.resizeValue.toFixed(1)}x</span>
-            <span>P:{gestureCommands.togglePhysics ? '✅' : '⭕'}</span>
+      
+      
+      <div className="flex border-[#140d30] border-2 flex-col p-2 text-xs text-white backdrop-blur-xl bg-opacity-50 rounded-md absolute mt-2 ml-2 w-48 z-50">
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffaa44', marginBottom: '4px' }}>
+            Detection Status:
+          </div>
+          <div style={{ marginLeft: '8px', lineHeight: '1.3' }}>
+            <div> <strong>Left Hand:</strong> {handsDetected.leftHand ? '✅ Detected' : '❌ Not Found'}</div>
+            <div> <strong>Right Hand:</strong> {handsDetected.rightHand ? '✅ Detected' : '❌ Not Found'}</div>
+            <div> <strong>Hands Detected:</strong> {handsDetected.count}</div>
           </div>
         </div>
-        <div style={{ marginTop: '6px', fontSize: '9px', color: '#aaa', lineHeight: '1.2' }}>
-          <div>✊ Pinch: R=Create, L=Select</div>
-          <div>� Two-hand pinch + move: Stretch/Shrink</div>
-          <div>🖐 Spread: R=Reset size, L=Physics</div>
+        
+        <div style={{ marginBottom: '6px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#88aaff', marginBottom: '4px' }}>
+            Gestures:
+          </div>
+          <div className="ml-2">
+            <div> <strong>Right Index Finger Point Up</strong> → Create Cube </div>
+            <div> <strong>Open Right Palm</strong> → Select Cube </div>
+            <div> <strong>Left Hand Fist</strong> → Move Selected Cube </div>
+            <div> <strong>Left Hand Pinch</strong> → Resize Selected Cube </div>
+          </div>
         </div>
       </div>
       
-      {/* Gesture Legend Panel */}
-      <div style={{
-        position: 'absolute',
-        top: '10px',
-        left: '10px',
-        background: 'rgba(0, 0, 0, 0.9)',
-        color: 'white',
-        padding: '12px',
-        borderRadius: '8px',
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        zIndex: 1000,
-        minWidth: '280px',
-        border: '1px solid rgba(255, 255, 255, 0.2)'
-      }}>
-        <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px', color: '#00ff88' }}>
-          🖐️ Gesture Legend
-        </div>
-        
-        {/* Single Hand Gestures */}
-        <div style={{ marginBottom: '8px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffaa44', marginBottom: '4px' }}>
-            Single Hand:
-          </div>
-          <div style={{ marginLeft: '8px', lineHeight: '1.3' }}>
-            <div>✊ <strong>Right Pinch</strong> → Create Cube 🟦</div>
-            <div>✊ <strong>Left Pinch</strong> → Select Cube 🎯</div>
-            <div>🖐 <strong>Right Spread</strong> → Reset Size 📏</div>
-            <div>🖐 <strong>Left Spread</strong> → Toggle Physics ⚡</div>
-          </div>
-        </div>
-        
-        {/* Two Hand Gestures */}
-        <div style={{ marginBottom: '6px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#88aaff', marginBottom: '4px' }}>
-            Two Hands (both pinching):
-          </div>
-          <div style={{ marginLeft: '8px', lineHeight: '1.3' }}>
-            <div>🤏 <strong>Move Apart ↔️</strong> → Stretch Horizontal 📈</div>
-            <div>🤏 <strong>Move Apart ↕️</strong> → Stretch Vertical 📈</div>
-            <div>🤏 <strong>Move Together ↔️</strong> → Shrink Horizontal 📉</div>
-            <div>🤏 <strong>Move Together ↕️</strong> → Shrink Vertical 📉</div>
-          </div>
-        </div>
-        
-        {/* Keyboard Fallback */}
-        <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.2)', paddingTop: '6px' }}>
-          <div style={{ fontSize: '9px', color: '#aaa' }}>
-            <strong>Keyboard:</strong> C=Create, S=Select, R=Resize, P=Physics
-          </div>
-        </div>
-      </div>
       
       {/* 3D Scene */}
       <CubeScene gestureCommands={gestureCommands} />

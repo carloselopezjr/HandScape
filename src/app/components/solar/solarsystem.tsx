@@ -62,7 +62,7 @@ export default function CubeOrbit() {
     return (
         <div className="fade-in-world w-screen h-screen">
             <Canvas>
-                <directionalLight intensity={1.5} castShadow={true} />
+                <directionalLight position={[3, 3, 3]} intensity={1.5} castShadow={true} />
                 <RotatingCube />
                 {orbitCubes.map((position, index) => (
                     <OrbitingCube key={index} position={position} />

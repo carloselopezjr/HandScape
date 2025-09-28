@@ -1,5 +1,5 @@
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Edges } from '@react-three/drei';
+import { OrbitControls, Edges, Environment, ContactShadows, TransformControls } from '@react-three/drei';
 import { useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { Physics, useBox } from '@react-three/cannon';
@@ -41,31 +41,43 @@ function RotatingCube() {
     return (
         <mesh ref={ref}>
             <boxGeometry args={[2.5, 2.5, 2.5]} />
-            <meshStandardMaterial color={"blue"} />
-            <Edges color={"grey"} />
+            <meshStandardMaterial 
+                color={"#3742fa"} 
+                roughness={0.3}
+                metalness={0.1}
+            />
+            <Edges color={"#2f3542"} />
         </mesh>
     );
 }
 
 // Dynamic cam orientation
-function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [number, number, number] | null }) {
+function CamOrientation({ 
+    selectedCubePosition, 
+    isMovingCube 
+}: { 
+    selectedCubePosition: [number, number, number] | null;
+    isMovingCube: boolean;
+}) {
     const { camera } = useThree();
     const orbitControlsRef = useRef<any>(null);
     const lastTargetRef = useRef<[number, number, number] | null>(null);
     const isAnimatingRef = useRef(false);
 
     useEffect(() => {
-        // Prevent animation if we're already animating or if the target hasn't significantly changed
-        if (isAnimatingRef.current) return;
+        // Prevent animation if we're already animating, if cube is being moved via gesture, 
+        // or if the target hasn't significantly changed
+        if (isAnimatingRef.current || isMovingCube) return;
         
         if (selectedCubePosition && orbitControlsRef.current) {
             const [x, y, z] = selectedCubePosition;
             
             // Check if the position has changed significantly to avoid constant re-animation
+            // Increase threshold to 5 units to prevent camera updates during small movements
             if (lastTargetRef.current) {
                 const [lastX, lastY, lastZ] = lastTargetRef.current;
                 const distance = Math.sqrt((x - lastX) ** 2 + (y - lastY) ** 2 + (z - lastZ) ** 2);
-                if (distance < 2) return; // Don't animate for small movements
+                if (distance < 5) return; // Don't animate for small movements (increased threshold)
             }
             
             lastTargetRef.current = [x, y, z];
@@ -109,7 +121,7 @@ function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [numbe
             lastTargetRef.current = null;
             isAnimatingRef.current = true;
             
-            const defaultPosition = new THREE.Vector3(10, 10, 10);
+            const defaultPosition = new THREE.Vector3(50, 30, 50);
             const defaultTarget = new THREE.Vector3(0, 0, 0);
             const startPosition = camera.position.clone();
             const startTarget = orbitControlsRef.current.target.clone();
@@ -137,55 +149,95 @@ function CamOrientation({ selectedCubePosition }: { selectedCubePosition: [numbe
 
             resetCamera();
         }
-    }, [selectedCubePosition, camera]);
+    }, [selectedCubePosition, camera, isMovingCube]);
 
     return <OrbitControls ref={orbitControlsRef} enablePan={true} enableZoom={true} enableRotate={true} />;
 }
 
 // Physics-enabled cube with individual physics control
-function PhysicsCube({ position, size, isSelected, onSelect, onPositionUpdate, index, physicsEnabled }: {
+function PhysicsCube({ 
+    position, 
+    size, 
+    isSelected, 
+    onSelect, 
+    onPositionUpdate, 
+    index, 
+    physicsEnabled,
+    isMoving,
+    meshRef
+}: {
     position: [number, number, number],
     size: [number, number, number],
     isSelected: boolean,
     onSelect: () => void,
     onPositionUpdate: (index: number, position: [number, number, number]) => void,
     index: number,
-    physicsEnabled: boolean
+    physicsEnabled: boolean,
+    isMoving?: boolean,
+    meshRef?: React.MutableRefObject<THREE.Mesh | null>
 }) {
     // mass = 1 means it will fall under gravity, mass = 0 means static
     const [ref, api] = useBox(() => ({
-        mass: physicsEnabled ? 1 : 0,
+        mass: physicsEnabled && !isMoving ? 1 : 0, // Disable physics during gesture movement
         position,
         args: size
     }));
 
-    // Update mass when physics enabled/disabled
+    // Update mass when physics enabled/disabled or when moving via gesture
     useEffect(() => {
-        console.log(`Cube ${index}: Physics enabled = ${physicsEnabled}`);
-        if (physicsEnabled) {
+        if (isMoving) {
+            api.mass.set(0); // Make static during gesture movement
+        } else if (physicsEnabled) {
             api.mass.set(1);
-            console.log(`Cube ${index}: Set mass to 1 (physics enabled)`);
         } else {
             api.mass.set(0);
-            // When disabling physics, also set velocity to 0 to stop movement
-            api.velocity.set(0, 0, 0);
-            api.angularVelocity.set(0, 0, 0);
-            console.log(`Cube ${index}: Set mass to 0 (physics disabled)`);
         }
-    }, [physicsEnabled, api.mass, api.velocity, api.angularVelocity, index]);
+    }, [physicsEnabled, isMoving, api.mass]);
 
-    // Subscribe to position updates and report back to parent
+    // Subscribe to position updates and report back to parent (only when not moving via gesture)
     useEffect(() => {
-        const unsubscribe = api.position.subscribe((pos) => {
-            onPositionUpdate(index, [pos[0], pos[1], pos[2]]);
-        });
-        return unsubscribe;
-    }, [api.position, onPositionUpdate, index]);
+        if (!isMoving) {
+            const unsubscribe = api.position.subscribe((pos) => {
+                onPositionUpdate(index, [pos[0], pos[1], pos[2]]);
+            });
+            return unsubscribe;
+        }
+    }, [api.position, onPositionUpdate, index, isMoving]);
+
+    // Update physics position when moved via gesture
+    useEffect(() => {
+        if (!isMoving && ref.current) {
+            const currentPos = ref.current.position;
+            api.position.set(currentPos.x, currentPos.y, currentPos.z);
+            api.velocity.set(0, 0, 0); // Stop any residual velocity
+        }
+    }, [isMoving, api.position, api.velocity]);
+
+    // Assign mesh ref for TransformControls
+    useEffect(() => {
+        if (meshRef && ref.current) {
+            meshRef.current = ref.current as THREE.Mesh;
+        }
+    }, [meshRef, ref]);
+
+    // When moving via gesture, continuously update physics body to match mesh position
+    useFrame(() => {
+        if (isMoving && ref.current) {
+            const meshPos = ref.current.position;
+            // Force physics body to follow mesh position during gesture movement
+            api.position.set(meshPos.x, meshPos.y, meshPos.z);
+            api.velocity.set(0, 0, 0); // Prevent physics from interfering
+        }
+    });
 
     return (
-        <mesh ref={ref} onClick={onSelect}>
+        <mesh ref={ref} onClick={onSelect} castShadow receiveShadow>
             <boxGeometry args={size} />
-            <meshStandardMaterial color={isSelected ? "red" : "royalblue"} />
+            <meshStandardMaterial 
+                color={isSelected ? "#ff4757" : "#3742fa"} 
+                roughness={0.3}
+                metalness={0.1}
+            />
             <Edges color={isSelected ? "white" : "black"} />
         </mesh>
     )
@@ -200,10 +252,14 @@ function Baseplate() {
     }));
 
     return (
-        <mesh ref={ref}>
+        <mesh ref={ref} receiveShadow>
             <boxGeometry args={[100, 2.5, 100]} />
-            <meshStandardMaterial color="grey" />
-            <Edges color="black" />
+            <meshStandardMaterial 
+                color="black" 
+                roughness={0.8}
+                metalness={0.05}
+            />
+            <Edges color="#34495e" lineWidth={1} />
         </mesh>
     )
 }
@@ -213,20 +269,102 @@ function StaticBaseplate() {
     return (
         <mesh position={[0, -1.25, 0]}>
             <boxGeometry args={[100, 2.5, 100]} />
-            <meshStandardMaterial color="grey" />
+            <meshStandardMaterial color="black" />
             <Edges color="black" />
         </mesh>
     )
 }
 
-export default function CubeScene({ gestureCommands }: { 
-    gestureCommands?: {
-        createCube?: boolean;
-        selectCube?: boolean;
-        resizeValue?: number;
-        togglePhysics?: boolean;
-    } 
-} = {}) {
+// Transform Controls for selected cube movement
+function CubeTransformControls({ 
+    isActive, 
+    targetRef, 
+    handPosition,
+    onPositionChange,
+    initialCubePosition
+}: { 
+    isActive: boolean;
+    targetRef: React.MutableRefObject<THREE.Mesh | null>;
+    handPosition: { x: number; y: number; z: number };
+    onPositionChange: (position: [number, number, number]) => void;
+    initialCubePosition?: [number, number, number];
+}) {
+    const transformRef = useRef<any>(null);
+    const initialHandPos = useRef<{ x: number; y: number; z: number } | null>(null);
+    const baseCubePos = useRef<[number, number, number] | null>(null);
+    
+    // Initialize reference positions when movement starts
+    useEffect(() => {
+        if (isActive && !initialHandPos.current && initialCubePosition) {
+            initialHandPos.current = { ...handPosition };
+            baseCubePos.current = [...initialCubePosition];
+            console.log('🎯 Movement started - Initial hand:', initialHandPos.current, 'Initial cube:', baseCubePos.current);
+        } else if (!isActive) {
+            // Reset when movement stops
+            console.log('🛑 Movement stopped');
+            initialHandPos.current = null;
+            baseCubePos.current = null;
+        }
+    }, [isActive, handPosition, initialCubePosition]);
+    
+    useEffect(() => {
+        if (isActive && targetRef.current && initialHandPos.current && baseCubePos.current) {
+            // Calculate relative movement from initial hand position
+            const deltaX = handPosition.x - initialHandPos.current.x;
+            const deltaY = handPosition.y - initialHandPos.current.y;
+            const deltaZ = handPosition.z - initialHandPos.current.z;
+            
+            // Apply movement scaling for better control (reduce sensitivity)
+            const sensitivity = 0.8;
+            const targetX = baseCubePos.current[0] + (deltaX * sensitivity);
+            const targetY = baseCubePos.current[1] + (deltaY * sensitivity);
+            const targetZ = baseCubePos.current[2] + (deltaZ * sensitivity);
+            
+            // Apply boundary constraints
+            const constrainedTarget = [
+                Math.max(-45, Math.min(45, targetX)),   // X bounds
+                Math.max(2.5, Math.min(50, targetY)),   // Y bounds (above baseplate)
+                Math.max(-45, Math.min(45, targetZ))    // Z bounds
+            ];
+            
+            // Direct position update on the mesh
+            targetRef.current.position.set(constrainedTarget[0], constrainedTarget[1], constrainedTarget[2]);
+            
+            // Debug logging
+            console.log('🔄 Moving cube to:', constrainedTarget, 'Delta:', [deltaX, deltaY, deltaZ]);
+            
+            onPositionChange(constrainedTarget as [number, number, number]);
+        }
+    }, [isActive, handPosition, targetRef, onPositionChange, initialHandPos, baseCubePos]);
+
+    if (!isActive || !targetRef.current) return null;
+
+    return (
+        <TransformControls
+            ref={transformRef}
+            object={targetRef.current}
+            mode="translate"
+            showX={false}
+            showY={false} 
+            showZ={false}
+            enabled={false} // Disable manual dragging, control via hand
+        />
+    );
+}
+
+interface GestureCommands {
+    createCube: boolean;
+    selectCube: boolean;
+    resizeValue: number;
+    togglePhysics: boolean;
+    moveCube: boolean;
+    handPosition: { x: number; y: number; z: number };
+    leftHandStretch: boolean;
+    stretchDirection: 'horizontal' | 'vertical' | 'none';
+    stretchIntensity: number;
+}
+
+export default function CubeScene({ gestureCommands }: { gestureCommands?: GestureCommands }) {
     // State to manage cubes, storing position & size
     const [cubes, setCubes] = useState<Array<{ position: [number, number, number]; size: [number, number, number] }>>([]);
     const [selectedCube, setSelectedCube] = useState<number | null>(null);
@@ -242,15 +380,107 @@ export default function CubeScene({ gestureCommands }: {
     // Track current positions of physics cubes
     const [currentPositions, setCurrentPositions] = useState<Array<[number, number, number]>>([]);
 
+    // Ref for selected cube mesh (for TransformControls)
+    const selectedCubeMeshRef = useRef<THREE.Mesh | null>(null);
+
+    // Track the initial position of selected cube for camera targeting (doesn't update during movement)
+    const [selectedCubeInitialPosition, setSelectedCubeInitialPosition] = useState<[number, number, number] | null>(null);
+
+    // Gesture command handlers
+    useEffect(() => {
+        if (gestureCommands?.createCube) {
+            console.log('🖐️ Gesture command: Create cube');
+            createCube();
+        }
+    }, [gestureCommands?.createCube]);
+
+    useEffect(() => {
+        if (gestureCommands?.selectCube && cubes.length > 0) {
+            console.log('🖐️ Gesture command: Select cube');
+            const nextIndex = selectedCube === null ? 0 : (selectedCube + 1) % cubes.length;
+            handleCubeSelection(nextIndex);
+        }
+    }, [gestureCommands?.selectCube]);
+
+    useEffect(() => {
+        if (gestureCommands?.togglePhysics && selectedCube !== null) {
+            console.log('🖐️ Gesture command: Toggle physics for cube', selectedCube);
+            toggleSelectedCubePhysics();
+        }
+    }, [gestureCommands?.togglePhysics]);
+
+    useEffect(() => {
+        if (gestureCommands && selectedCube !== null && gestureCommands.resizeValue !== 1.0) {
+            console.log('🖐️ Gesture command: Resize cube to', gestureCommands.resizeValue);
+            const newSize = gestureCommands.resizeValue * 5; // Base size of 5
+            updateSelectedCubeSize(newSize, newSize, newSize);
+        }
+    }, [gestureCommands?.resizeValue]);
+
+    // Handle stretch gesture for resizing
+    useEffect(() => {
+        if (gestureCommands?.leftHandStretch && selectedCube !== null) {
+            console.log('🖐️ Gesture command: Stretch resize cube', gestureCommands.stretchDirection, gestureCommands.stretchIntensity);
+            
+            const currentCube = cubes[selectedCube];
+            if (!currentCube) return;
+            
+            const baseSize = 5; // Base cube size
+            const intensity = gestureCommands.stretchIntensity;
+            
+            if (gestureCommands.stretchDirection === 'horizontal') {
+                // Horizontal stretch affects width (X) and depth (Z)
+                updateSelectedCubeSize(
+                    baseSize * intensity,  // width
+                    currentCube.size[1],   // keep height same
+                    baseSize * intensity   // depth
+                );
+                setWidth(baseSize * intensity);
+                setLength(baseSize * intensity);
+            } else if (gestureCommands.stretchDirection === 'vertical') {
+                // Vertical stretch affects height (Y)
+                updateSelectedCubeSize(
+                    currentCube.size[0],   // keep width same
+                    baseSize * intensity,  // height
+                    currentCube.size[2]    // keep depth same
+                );
+                setHeight(baseSize * intensity);
+            }
+        }
+    }, [gestureCommands?.leftHandStretch, gestureCommands?.stretchDirection, gestureCommands?.stretchIntensity, selectedCube, cubes]);
+
+    // Handle cube movement via fist gesture
+    const handleGesturePositionUpdate = (position: [number, number, number]) => {
+        if (selectedCube !== null) {
+            setCurrentPositions(prev => {
+                const updated = [...prev];
+                updated[selectedCube] = position;
+                return updated;
+            });
+
+            // Update cube position in the cubes array
+            setCubes(prev => {
+                const updated = [...prev];
+                updated[selectedCube] = {
+                    ...updated[selectedCube],
+                    position: position
+                };
+                return updated;
+            });
+        }
+    };
+
     const createCube = () => {
-        const x = Math.random() * 5;
-        const y = Math.random() * 25;
-        const z = Math.random() * 100;
+        // Spawn within baseplate bounds (100x100 centered at origin)
+        // Baseplate is at y=-1.25 with height 2.5, so top surface is at y=0
+        const baseplateSize = 45; // Use smaller area within the 100x100 baseplate for better UX
+        const x = (Math.random() - 0.5) * baseplateSize; // -22.5 to 22.5
+        const y = 10; // Start cubes at a reasonable height above the baseplate
+        const z = (Math.random() - 0.5) * baseplateSize; // -22.5 to 22.5
         const newPosition: [number, number, number] = [x, y, z];
         setCubes([...cubes, { position: newPosition, size: [5, 5, 5] }]);
         setCurrentPositions([...currentPositions, newPosition]);
-        setCubePhysicsEnabled([...cubePhysicsEnabled, true]); // New cubes start with physics enabled
-        console.log('Created new cube, total cubes:', cubes.length + 1, 'physics states:', [...cubePhysicsEnabled, true]);
+        setCubePhysicsEnabled([...cubePhysicsEnabled, false]); // New cubes start with gravity disabled for better UX
     };
 
     // Handle position updates from physics cubes
@@ -265,11 +495,9 @@ export default function CubeScene({ gestureCommands }: {
     // Toggle physics for the selected cube only
     const toggleSelectedCubePhysics = () => {
         if (selectedCube !== null) {
-            console.log('Toggling physics for cube', selectedCube, 'from', cubePhysicsEnabled[selectedCube], 'to', !cubePhysicsEnabled[selectedCube]);
             setCubePhysicsEnabled(prev => {
                 const updated = [...prev];
                 updated[selectedCube] = !updated[selectedCube];
-                console.log('Updated physics state:', updated);
                 return updated;
             });
         }
@@ -277,6 +505,8 @@ export default function CubeScene({ gestureCommands }: {
 
     const handleCubeSelection = (index: number) => {
         setSelectedCube(index);
+        // Store the initial position for camera targeting (won't change during movement)
+        setSelectedCubeInitialPosition(cubes[index].position);
         // Load sliders values from selected cube
         setWidth(cubes[index].size[0]);
         setHeight(cubes[index].size[1]);
@@ -294,126 +524,58 @@ export default function CubeScene({ gestureCommands }: {
         setCubes(newCubes);
     };
 
-    // Handle gesture commands
-    useEffect(() => {
-        if (gestureCommands?.createCube) {
-            createCube();
-        }
-    }, [gestureCommands?.createCube]);
-
-    useEffect(() => {
-        if (gestureCommands?.selectCube && cubes.length > 0) {
-            // Select the most recent cube or cycle through cubes
-            const nextCube = selectedCube === null ? 0 : (selectedCube + 1) % cubes.length;
-            handleCubeSelection(nextCube);
-        }
-    }, [gestureCommands?.selectCube]);
-
-    useEffect(() => {
-        if (gestureCommands?.resizeValue && selectedCube !== null) {
-            // Map hand distance to cube size (scale and clamp)
-            const size = Math.max(1, Math.min(20, gestureCommands.resizeValue));
-            setWidth(size);
-            setHeight(size);
-            setLength(size);
-            updateSelectedCubeSize(size, size, size);
-        }
-    }, [gestureCommands?.resizeValue, selectedCube]);
-
-    useEffect(() => {
-        if (gestureCommands?.togglePhysics && selectedCube !== null) {
-            toggleSelectedCubePhysics();
-        }
-    }, [gestureCommands?.togglePhysics, selectedCube]);
-
     return (
-        <div className="fade-in-world w-screen h-screen">
-            {/* UI overlay */}
-            <div className="absolute ml-10 mt-5 top-4 left-4 z-10">
-                <div className="rounded-xl border w-20 h-20 backdrop-blur-md border-[#140d30]">
-                    <Canvas onClick={createCube}>
-                        <ambientLight intensity={Math.PI / 2} />
-                        <RotatingCube />
-                    </Canvas>
-                </div>
+        
 
-                <button
-                    onClick={() => setSelectedCube(null)}
-                    className="text-white pt-2 rounded hover:bg-gray-600 transition-all"
-                >
-                    Reset Camera
-                </button>
-
-                {/* Physics toggle button for selected cube */}
-                {selectedCube !== null && (
-                    <button
-                        onClick={toggleSelectedCubePhysics}
-                        className="text-white mt-2 pt-2 rounded hover:bg-gray-600 transition-all"
-                    >
-                        {(cubePhysicsEnabled[selectedCube] ?? true) ? "Disable Gravity" : "Enable Gravity"}
-                    </button>
-                )}
-
-                {selectedCube !== null && (
-                    <div className="mt-2 text-white">
-                        <div className="mb-2 text-sm">
-                            Selected Cube #{selectedCube + 1} - Physics: {(cubePhysicsEnabled[selectedCube] ?? true) ? "ON" : "OFF"}
-                        </div>
-                        <div className="">
-                            Width: {width.toFixed(1)}
-                            <input
-                                className=""
-                                type="range"
-                                min={1}
-                                max={30}
-                                step={0.1}
-                                value={width}
-                                onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setWidth(val);
-                                    updateSelectedCubeSize(val, height, length);
-                                }}
-                            />
-                        </div>
-                        <div>
-                            Height: {height.toFixed(1)}
-                            <input
-                                type="range"
-                                min={1}
-                                max={30}
-                                step={0.1}
-                                value={height}
-                                onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setHeight(val);
-                                    updateSelectedCubeSize(width, val, length);
-                                }}
-                            />
-                        </div>
-                        <div>
-                            Length: {length.toFixed(1)}
-                            <input
-                                type="range"
-                                min={1}
-                                max={30}
-                                step={0.1}
-                                value={length}
-                                onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setLength(val);
-                                    updateSelectedCubeSize(width, height, val);
-                                }}
-                            />
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <Canvas>
-                {/* Lighting */}
-                <ambientLight intensity={Math.PI / 2} />
-                <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
-                <pointLight position={[-10, -10, -10]} decay={0} intensity={Math.PI} />
+            <Canvas shadows camera={{ position: [50, 30, 50], fov: 90 }}>
+                {/* Professional Blender-inspired lighting setup */}
+                
+                {/* Key Light - Main directional light (sun) */}
+                <directionalLight
+                    position={[15, 20, 10]}
+                    intensity={1.0}
+                    castShadow
+                    shadow-mapSize-width={2048}
+                    shadow-mapSize-height={2048}
+                    shadow-camera-far={50}
+                    shadow-camera-left={-25}
+                    shadow-camera-right={25}
+                    shadow-camera-top={25}
+                    shadow-camera-bottom={-25}
+                    color="#ffffff"
+                />
+                
+                {/* Fill Light - Softer light to fill shadows */}
+                <directionalLight
+                    position={[-10, 15, -5]}
+                    intensity={0.3}
+                    color="#e6f3ff"
+                />
+                
+                {/* Rim Light - Accent lighting for edge definition */}
+                <spotLight
+                    position={[5, 25, -15]}
+                    angle={0.3}
+                    penumbra={0.5}
+                    intensity={0.6}
+                    color="#fff5e6"
+                    castShadow
+                />
+                
+                {/* Ambient base lighting - replaces harsh ambientLight */}
+                <ambientLight intensity={0.15} color="#f0f4ff" />
+                
+                {/* Environment lighting for realistic reflections */}
+                <Environment preset="city" background={false} />
+                
+                {/* Contact shadows for ground interaction */}
+                <ContactShadows 
+                    position={[0, -1.24, 0]} 
+                    opacity={0.5} 
+                    scale={50} 
+                    blur={2.5} 
+                    far={10} 
+                />
                 
                 {/* Baseplate + cubes with individual physics control */}
                 <Physics gravity={[0, -9.8, 0]}>
@@ -427,13 +589,32 @@ export default function CubeScene({ gestureCommands }: {
                             isSelected={selectedCube === index}
                             onSelect={() => handleCubeSelection(index)}
                             onPositionUpdate={handlePositionUpdate}
-                            physicsEnabled={cubePhysicsEnabled[index] ?? true}
+                            physicsEnabled={cubePhysicsEnabled[index] ?? false}
+                            isMoving={selectedCube === index && gestureCommands?.moveCube}
+                            meshRef={selectedCube === index ? selectedCubeMeshRef : undefined}
                         />
                     ))}
+
+                {/* Transform Controls for selected cube when moving */}
+                {selectedCube !== null && gestureCommands?.moveCube && (
+                    <>
+                        <CubeTransformControls
+                            isActive={true}
+                            targetRef={selectedCubeMeshRef}
+                            handPosition={gestureCommands.handPosition}
+                            onPositionChange={handleGesturePositionUpdate}
+                            initialCubePosition={selectedCubeInitialPosition || undefined}
+                        />
+                        
+                    </>
+                )}
                 </Physics>
 
-                <CamOrientation selectedCubePosition={selectedCube !== null ? cubes[selectedCube].position : null} />
+                <CamOrientation 
+                    selectedCubePosition={selectedCubeInitialPosition} 
+                    isMovingCube={selectedCube !== null && gestureCommands?.moveCube || false}
+                />
             </Canvas>
-        </div>
+        
     );
 }
