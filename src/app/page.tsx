@@ -3,6 +3,7 @@
 import './globals.css';
 import Starfield from "./components/stars/starfield";
 import CubeOrbit from './components/solar/solarsystem';
+import Link from 'next/link';
 
 
 export default function Home() {
@@ -23,13 +24,14 @@ export default function Home() {
         </div>
 
       {/* Enter World */}
-      <button className="mt-110 self-center relative inline-flex h-16 w-50 overflow-hidden rounded-2xl p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50">
-        <span className="absolute inset-[-1000%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)]" />
-        <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 py-1 text-2xl font-medium text-white backdrop-blur-3xl" style={{fontFamily: "prototype, sans-serif"}}>
+      <button className="mt-110 self-center relative inline-flex h-16 w-50 overflow-hidden rounded-2xl p-[1px] focus:outline-none focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50  hover:transition-all ease-in-out duration-450  hover:scale-105">
+        <span className="absolute inset-[-1000%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)] hover:transition-all ease-in-out duration-450" />
+        <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 py-1 text-2xl font-medium text-white backdrop-blur-3xl hover:transition-all ease-in-out duration-300 hover:text-gray-300 hover:bg-[#100a26]" style={{fontFamily: "prototype, sans-serif"}}>
+          <Link href="/play">
           Enter World
+          </Link>
         </span>
       </button>
-
     </main>
   );
 }

@@ -4,52 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { Physics, useBox } from '@react-three/cannon';
 
-// Function to create a new cube object, depracated
-/*
-function Cube({
-    position,
-    size,
-    isSelected,
-    onSelect
-}: {
-    position: [number, number, number];
-    size: [number, number, number];
-    isSelected: boolean;
-    onSelect: () => void;
-}) {
 
-    // Adjust if clicked
-    return (
-        <mesh position={position} onClick={onSelect}>
-            <boxGeometry args={size} />
-            <meshStandardMaterial color={isSelected ? "red" : "royalblue"} />
-            <Edges color={isSelected ? "white" : "black"} />
-        </mesh>
-    );
-}
-*/
-
-// Rotating cube button (temp)
-function RotatingCube() {
-    const ref = useRef<any>(null);
-
-    useFrame((state, delta) => {
-        ref.current.rotation.x += delta * 0.5; // smoother rotation
-        ref.current.rotation.y += delta * 0.5;
-    });
-
-    return (
-        <mesh ref={ref}>
-            <boxGeometry args={[2.5, 2.5, 2.5]} />
-            <meshStandardMaterial 
-                color={"#3742fa"} 
-                roughness={0.3}
-                metalness={0.1}
-            />
-            <Edges color={"#2f3542"} />
-        </mesh>
-    );
-}
 
 // Dynamic cam orientation
 function CamOrientation({ 
@@ -314,11 +269,12 @@ function CubeTransformControls({
             const deltaY = handPosition.y - initialHandPos.current.y;
             const deltaZ = handPosition.z - initialHandPos.current.z;
             
-            // Apply movement scaling for better control (reduce sensitivity)
-            const sensitivity = 0.8;
-            const targetX = baseCubePos.current[0] + (deltaX * sensitivity);
-            const targetY = baseCubePos.current[1] + (deltaY * sensitivity);
-            const targetZ = baseCubePos.current[2] + (deltaZ * sensitivity);
+            // Apply movement scaling for better control (different sensitivity for Z-axis)
+            const sensitivityXY = 0.8;
+            const sensitivityZ = 1.2; // Higher sensitivity for Z-axis due to MediaPipe's limited Z-range
+            const targetX = baseCubePos.current[0] + (deltaX * sensitivityXY);
+            const targetY = baseCubePos.current[1] + (deltaY * sensitivityXY);
+            const targetZ = baseCubePos.current[2] + (deltaZ * sensitivityZ);
             
             // Apply boundary constraints
             const constrainedTarget = [
@@ -447,7 +403,7 @@ export default function CubeScene({ gestureCommands }: { gestureCommands?: Gestu
                 setHeight(baseSize * intensity);
             }
         }
-    }, [gestureCommands?.leftHandStretch, gestureCommands?.stretchDirection, gestureCommands?.stretchIntensity, selectedCube, cubes]);
+    }, [gestureCommands?.leftHandStretch, gestureCommands?.stretchDirection, gestureCommands?.stretchIntensity, selectedCube]);
 
     // Handle cube movement via fist gesture
     const handleGesturePositionUpdate = (position: [number, number, number]) => {

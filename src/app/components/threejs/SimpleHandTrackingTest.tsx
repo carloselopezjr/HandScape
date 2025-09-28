@@ -392,10 +392,9 @@ export function SimpleHandTrackingTest() {
       // For fist and stretch gestures, allow continuous updates (no debounce for movement/resizing)
       if (gesture.type === 'FIST') {
         // Convert normalized coordinates to 3D space with improved control and boundary constraints
-        const rawX = (gesture.handCenter.x - 0.5) * 80; // Wider X range: -40 to +40
-        const rawY = (0.5 - gesture.handCenter.y) * 50; // Better Y range: 0 to 50
-        const rawZ = (gesture.handCenter.z - 0.5) * 60; // Centered Z range: -30 to +30
-        
+        const rawX = (gesture.handCenter.x - 0.5) * 80; 
+        const rawY = (0.5 - gesture.handCenter.y) * 50;
+        const rawZ = (gesture.handCenter.z - 0.5) * 80; 
         // Apply boundary constraints to keep cubes above baseplate and within reasonable bounds
         const handPosition = {
           x: Math.max(-45, Math.min(45, rawX)), // Constrain to baseplate X bounds
