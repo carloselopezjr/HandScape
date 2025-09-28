@@ -13,7 +13,7 @@ export default function Home() {
       <Starfield count={100} />
 
       {/* title */} 
-      <h1 className="z-20 mt-16 text-5xl font-bold text-center" style={{fontFamily: "Cubest-Medium, sans-serif"}}>HandScape</h1>
+      <h1 className=" inline-block z-20 mt-16 text-5xl font-bold text-center bg-gradient-to-r from-purple-600 to-teal-400 text-transparent bg-clip-text" style={{fontFamily: "Cubest-Medium, sans-serif"}}>HandScape</h1>
 
     
       {/* Solar System */}
@@ -25,7 +25,7 @@ export default function Home() {
       {/* Enter World */}
       <button className="mt-110 self-center relative inline-flex h-16 w-50 overflow-hidden rounded-2xl p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50">
         <span className="absolute inset-[-1000%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)]" />
-        <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-3 py-1 text-lg font-medium text-white backdrop-blur-3xl">
+        <span className="inline-flex h-full w-full cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 py-1 text-2xl font-medium text-white backdrop-blur-3xl" style={{fontFamily: "prototype, sans-serif"}}>
           Enter World
         </span>
       </button>
