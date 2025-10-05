@@ -17,7 +17,6 @@ export function SimpleHandTrackingTest() {
     createCube: false,
     selectCube: false,
     resizeValue: 1.0,
-    togglePhysics: false,
     moveCube: false,
     handPosition: { x: 0, y: 0, z: 0 },
     leftHandStretch: false,
